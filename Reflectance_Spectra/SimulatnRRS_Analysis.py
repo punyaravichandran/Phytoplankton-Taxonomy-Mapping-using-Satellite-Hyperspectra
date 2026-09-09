@@ -8,142 +8,148 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+import matplotlib.ticker as ticker
+import datetime
 
 # Load Data
-SAMRef_data = pd.read_csv('/content/Reflectance_SAM_2019-2024.csv')
-Absorption_data = pd.read_csv('/content/Scotian_Shelf_Pigment_Taxo_Absorption_2019-2024.csv')
+SAMRef_data = pd.read_csv("Reflectance_SAM_2019-2024_cdom160.csv")
+# Pigment, taxonomy, and absorption data
+Absorption_data = pd.read_csv("Scotian_Shelf_Pigment_Taxo_Absorption_2019-2024.csv")
 
-# Fix column name
-SAMRef_data.rename(columns={'isdata$SAMPLE_ID': 'SAMPLE_ID'}, inplace=True)
-# Merge datasets
-Final_df = pd.merge(SAMRef_data, Absorption_data, on='SAMPLE_ID')
+# Rename the SAMPLE_ID column in the reflectance dataset
+SAMRef_data.rename(columns={"isdata$SAMPLE_ID": "SAMPLE_ID"},inplace=True)
+# Merge Reflectance and Absorption Data
+Final_df = pd.merge(SAMRef_data,Absorption_data,on="SAMPLE_ID")
+Final_df.head()
 
-# Date Processing
-Final_df['SAMPLE_DATE'] = pd.to_datetime(Final_df['Date'], format='%d-%m-%Y')
-Final_df['YEAR'] = Final_df['SAMPLE_DATE'].dt.year
-Final_df['MONTH'] = Final_df['SAMPLE_DATE'].dt.month
-Final_df['DAY'] = Final_df['SAMPLE_DATE'].dt.day
-Final_df = Final_df.set_index('SAMPLE_DATE')
+# Calculate Mean Natural Algal Population Reflectance
+average_of_all_columns = SAMRef_data.mean( numeric_only=True)
+average_of_all_columns.index.name = "Wavebands"
+average = average_of_all_columns.reset_index()
+# Rename columns
+average.columns = ["Wavebands","Reflectance"]
+# Remove SAMPLE_ID from the wavelength data
+finalRef = average[average["Wavebands"] != "SAMPLE_ID"].copy()
 
-# Extract Reflectance Bands
-reflection_cols = [col for col in Final_df.columns if col.startswith('Refl')]
-Reflection = Final_df[reflection_cols]
+# Convert Date Information
+Final_df["SAMPLE_DATE"] = pd.to_datetime(Final_df["Date"],format="%d-%m-%Y")
+# Extract year, month, and day
+Final_df["YEAR"] = Final_df["SAMPLE_DATE"].dt.year
+Final_df["MONTH"] = Final_df["SAMPLE_DATE"].dt.month
+Final_df["DAY"] = Final_df["SAMPLE_DATE"].dt.day
 
-# Rename columns → numeric wavelength
-Reflection = Reflection.rename(columns=lambda x: x.replace('Refl', '').replace('nm', ''))
+# Filter Data by Depth
+Filtered_data = Final_df[Final_df["DEPTH"] < 20].copy()
+# Set SAMPLE_DATE as the index
+Filtered_data = Filtered_data.set_index("SAMPLE_DATE")
 
-# Seasonal Reflectance Plot
-Reflection_T = Reflection.transpose()
-Reflection_T.index.name = 'Wavebands'
-Reflection_T = Reflection_T.reset_index()
+# Extract Reflectance Spectra (400-700 nm)
+reflection_columns = [f"Refl{wavelength}nm"for wavelength in range(400, 701)]
+Reflection = Filtered_data[reflection_columns].copy()
 
-# Melt for plotting
-melted_df = pd.melt(
-    Reflection_T,
-    id_vars=['Wavebands'],
-    var_name='Date',
-    value_name='Reflectance'
+# Rename Reflectance Columns to Wavelengths
+column_mapping = {column: column.replace("Refl", "").replace("nm", "")
+    for column in Reflection.columns
+}
+Reflection = Reflection.rename(columns=column_mapping)
+
+# Transpose Reflectance Data
+Reflection_Coloumn = Reflection.transpose()
+Reflection_Coloumn.index.name = "Wavebands"
+# Reset index to convert wavelengths into a column
+Reflection_Coloumn = Reflection_Coloumn.reset_index()
+Reflection_Coloumn.head()
+
+# Seasonal Reflectance Spectra
+plt.rcParams["figure.figsize"] = (8, 4)
+value_vars = [
+    column
+    for column in Reflection_Coloumn.columns
+    if column != "Wavebands"
+]
+# Assign observations to seasons
+melted_df["Season"] = pd.cut(
+    melted_df["Date"].dt.month,
+    bins=[3, 5, 8, 11],
+    labels=["Spring", "Summer", "Fall"],
+    ordered=False,
+    right=True
 )
-melted_df['Date'] = pd.to_datetime(melted_df['Date'])
+# Remove observations that were not assigned to a season
+melted_df = melted_df.dropna(subset=["Season"])
 
-# Assign seasons
-melted_df['Season'] = pd.cut(
-    melted_df['Date'].dt.month,
-    bins=[2, 5, 8, 11],
-    labels=['Spring', 'Summer', 'Fall']
-)
-melted_df = melted_df.dropna(subset=['Season'])
-
-# Plot
-plt.figure(figsize=(7, 4))
-sns.lineplot(
-    x='Wavebands',
-    y='Reflectance',
-    hue='Season',
-    data=melted_df,
-    errorbar='ci'
-)
-plt.xlabel('Wavelength (nm)')
-plt.ylabel('Reflectance (sr⁻¹)')
-plt.xticks(rotation=90)
+# Plot Seasonal Reflectance Spectra
+sns.lineplot(x="Wavebands",y="Reflection",data=melted_df,hue="Season",errorbar="ci",err_style="band")
+plt.xlabel("Wavelength (nm)",fontsize=12)
+plt.ylabel("Reflectance spectra (sr-1)",fontsize=12)
+plt.xticks(np.arange(0, 301, step=10),rotation=90)
+plt.rcParams["xtick.labelsize"] = 12
+plt.legend()
 plt.tight_layout()
 plt.show()
 
-# Taxa Percentage Calculation
-taxa_cols = ['diatom', 'dino1', 'hapto6', 'chloro']
-taxa_percent = Final_df[taxa_cols].div(Final_df['HPLCHLA'], axis=0) * 100
-taxa_percent = taxa_percent.rename(columns={
-    'diatom': 'diatom_percent',
-    'dino1': 'dino_percent',
-    'hapto6': 'hapto_percent',
-    'chloro': 'chloro_percent'
-})
-# Combine reflectance + taxa
-Reflection_taxa = pd.concat([Reflection, taxa_percent], axis=1)
-
-# Extract Dominant Taxa Spectra (>80%)
-def extract_taxa_mean(df, taxa_name):
-    subset = df[df[f'{taxa_name}_percent'] > 80]
-    mean_spec = subset.mean()
-    mean_spec.index.name = 'Wavebands'
-    mean_spec = mean_spec.rename(taxa_name.capitalize())
-    
-    df_out = mean_spec.reset_index()
-    
-    # Remove percentage rows
-    df_out = df_out[~df_out['Wavebands'].str.contains('percent')]
-    
-    return df_out
-
-Diatoms = extract_taxa_mean(Reflection_taxa, 'diatom')
-Dino = extract_taxa_mean(Reflection_taxa, 'dino')
-Hapto = extract_taxa_mean(Reflection_taxa, 'hapto')
-Chloro = extract_taxa_mean(Reflection_taxa, 'chloro')
-
-# Mixed Population Reflectance
-mixed_ref = Reflection.mean().reset_index()
-mixed_ref.columns = ['Wavebands', 'Mixed_Population']
-
-# Combine All Spectra
-Reflection_4taxa = pd.concat(
-    [Diatoms, Dino, Hapto, Chloro, mixed_ref],
-    axis=1
+# Calculate Taxonomic Biomass Percentage
+taxa_biomass = Filtered_data[["diatom","dino1","hapto6","chloro"]].div(Filtered_data["HPLCHLA"],axis=0)
+# Convert fractions to percentages
+taxa_percent = taxa_biomass * 100
+# Rename Taxonomic Percentage Columns
+taxa_percent = taxa_percent.rename(
+    columns={
+        "diatom": "diatom_percent",
+        "dino1": "dino_percent",
+        "hapto6": "hapto_percent",
+        "chloro": "chloro_percent"
+    }
 )
-Reflection_4taxa = Reflection_4taxa.loc[:, ~Reflection_4taxa.columns.duplicated()]
+# Combine Reflectance and Taxonomic Data
+Reflection_taxa = pd.concat([Reflection,taxa_percent],axis=1)
+# Select observations where diatoms contribute >80%
+Diatoms = Reflection_taxa[Reflection_taxa["diatom_percent"] > 80].mean()
+Diatoms.index.name = "Wavebands"
+Diatoms = Diatoms.rename("Diatoms")
+Diatoms1 = Diatoms.reset_index()
+# Remove taxonomic percentage rows
+Diatoms1 = Diatoms1.drop(Diatoms1[Diatoms1["Wavebands"].isin(["diatom_percent","dino_percent","hapto_percent","chloro_percent"])].index)
+# Select observations where dinoflagellates contribute >80%
+Dino = Reflection_taxa(Reflection_taxa["dino_percent"] > 80].mean()
+Dino.index.name = "Wavebands"
+Dino = Dino.rename("Dinoflagellates")
+Dino1 = Dino.reset_index()
+Dino1 = Dino1.drop(Dino1[Dino1["Wavebands"].isin(["diatom_percent","dino_percent","hapto_percent","chloro_percent"])].index)
+# Select observations where haptophytes contribute >80%
+Hapto = Reflection_taxa[Reflection_taxa["hapto_percent"] > 80].mean()
+Hapto.index.name = "Wavebands"
+Hapto = Hapto.rename("Haptophytes")
+Hapto1 = Hapto.reset_index()
+Hapto1 = Hapto1.drop(Hapto1[Hapto1["Wavebands"].isin(["diatom_percent","dino_percent","hapto_percent","chloro_percent"])].index)
+# Select observations where chlorophytes contribute >80%
+Chloro = Reflection_taxa[Reflection_taxa["chloro_percent"] > 80].mean()
+Chloro.index.name = "Wavebands"
+Chloro = Chloro.rename("Chlorophytes")
+Chloro1 = Chloro.reset_index()
+Chloro1 = Chloro1.drop(Chloro1[Chloro1["Wavebands"].isin(["diatom_percent","dino_percent","hapto_percent","chloro_percent"])].index)
+# Combine Taxa Reflectance with Natural Population Reflectance
+finalRef = finalRef.rename(columns={"Reflectance": "Natural_Population"})
+Mixed_Spectra = finalRef["Natural_Population"].reset_index()
+# Combine all taxonomic reflectance spectra
+Reflection_4taxa = pd.concat([Diatoms1,Dino1,Hapto1,Chloro1,Mixed_Spectra],axis=1)
+# Remove duplicate columns
+Reflection_4taxa = Reflection_4taxa.loc[:,~Reflection_4taxa.columns.duplicated()]
+# Remove unnecessary index column
+Reflection_4taxa = Reflection_4taxa.drop(columns=["index"])
+Reflection_4taxa.head()
 
-# Plot Taxa Reflectance
-taxa_dfs = []
-for name, df in zip(
-    ['Diatoms', 'Dinoflagellates', 'Haptophytes', 'Chlorophytes'],
-    [Diatoms, Dino, Hapto, Chloro]
-):
-    temp = df.copy()
-    temp['Taxa'] = name
-    taxa_dfs.append(temp)
-
-all_taxa_df = pd.concat(taxa_dfs, ignore_index=True)
-
-# Melt
-all_taxa_melt = pd.melt(
-    all_taxa_df,
-    id_vars=['Wavebands', 'Taxa'],
-    var_name='Measurement',
-    value_name='Reflectance'
-)
-# Convert wavelength
-all_taxa_melt['Wavebands'] = all_taxa_melt['Measurement'].str.extract('(\d+)').astype(float)
-
-# Plot
-plt.figure(figsize=(10, 5))
-sns.lineplot(
-    x='Wavebands',
-    y='Reflectance',
-    hue='Taxa',
-    data=all_taxa_melt,
-    errorbar='ci'
-)
-plt.xlabel('Wavelength (nm)')
-plt.ylabel('Reflectance')
-plt.xticks(np.arange(400, 701, 20), rotation=90)
+# Plot Reflectance Spectra of Major Algal Taxa
+x = Reflection_4taxa["Wavebands"]
+y = Reflection_4taxa[["Diatoms","Dinoflagellates","Haptophytes","Chlorophytes","Natural_Population"]]
+plt.rcParams["figure.figsize"] = (7, 4)
+plt.plot(x,y,linestyle="solid",label=["Diatoms","Dinoflagellates","Haptophytes","Chlorophytes","Natural Population"])
+plt.xlabel("Wavelength (nm)",fontsize=12)
+plt.ylabel("Reflectance Spectra (sr-1)",fontsize=12)
+plt.xticks(np.arange(0, 301, step=10))
+plt.rcParams["xtick.labelsize"] = 11
+plt.xticks(rotation=90)
+plt.legend()
 plt.tight_layout()
 plt.show()
