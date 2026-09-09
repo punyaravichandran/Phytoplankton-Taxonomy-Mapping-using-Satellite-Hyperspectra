@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+authors:
+- family-names: "P"
+  given-names: "Punya"
+  orcid: "https://orcid.org/0000-0000-0000-0000"
+- family-names: "Devred"
+  given-names: "Emmanuel"
+  orcid: "https://orcid.org/0000-0000-0000-0000"
+title: "Phytoplankton-Taxonomy-Mapping-using-Satellite-Hyperspectra"
+version: 1.0.0
+doi: 10.5281/zenodo.1234
+date-released: 2026-09-09
+url: "https://github.com/punyaravichandran/Phytoplankton-Taxonomy-Mapping-using-Satellite-Hyperspectra"
