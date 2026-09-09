@@ -84,72 +84,20 @@ plt.tight_layout()
 plt.show()
 
 # PIE CHARTS_ SEASONAL COMPOSITION
-# 11. Seasonal Taxonomic Composition - Pie Charts
-# =============================================================================
-
-fig, axs = plt.subplots(
-    1,
-    3,
-    figsize=(12, 5)
-)
-
+fig, axs = plt.subplots(1,3,figsize=(12, 5))
 # Labels for phytoplankton groups
-labels = [
-    "Diatom",
-    "Dino",
-    "Hapto",
-    "Dictyo",
-    "Chloro"
-]
-
-
-# -------------------------------------------------------------------------
+labels = ["Diatom","Dino","Hapto","Dictyo","Chloro"]
 # Spring
-# -------------------------------------------------------------------------
-
 sizes_spring = Spring_Data[selected_columns].sum()
-
-axs[0].pie(
-    sizes_spring,
-    labels=labels,
-    autopct="%1.0f%%",
-    textprops={"size": "smaller"}
-)
-
+axs[0].pie(sizes_spring,labels=labels,autopct="%1.0f%%",textprops={"size": "smaller"})
 axs[0].set_title("Spring")
-
-
-# -------------------------------------------------------------------------
 # Summer
-# -------------------------------------------------------------------------
-
 sizes_summer = Summer_Data[selected_columns].sum()
-
-axs[1].pie(
-    sizes_summer,
-    labels=labels,
-    autopct="%1.0f%%",
-    textprops={"size": "smaller"}
-)
-
+axs[1].pie(sizes_summer,labels=labels,autopct="%1.0f%%",textprops={"size": "smaller"})
 axs[1].set_title("Summer")
-
-
-# -------------------------------------------------------------------------
 # Fall
-# -------------------------------------------------------------------------
-
 sizes_fall = Fall_Data[selected_columns].sum()
-
-axs[2].pie(
-    sizes_fall,
-    labels=labels,
-    autopct="%1.0f%%",
-    textprops={"size": "smaller"}
-)
-
+axs[2].pie(sizes_fall,labels=labels,autopct="%1.0f%%",textprops={"size": "smaller"})
 axs[2].set_title("Fall")
-
-
 plt.tight_layout()
 plt.show()
