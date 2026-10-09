@@ -3,318 +3,304 @@ Specific Absorption Normalization
 Author: Punya
 """
 
-# IMPORT PACKAGES
+# Load necessary packages
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-# LOAD DATA
-file_path = (
-    "Scotian_Shelf_Pigment_Taxo_Absorption_2019-2024.csv"
-)
+import plotly.express as px
+import datetime
 
-df = pd.read_csv(file_path)
-# CONVERT DATE
-df["SAMPLE_DATE"] = pd.to_datetime(
-    df["Date"],
-    format="%d-%m-%Y",
-    errors="coerce"
+# Load CSV file
+Insitu__data = pd.read_csv(r'/content/Scotian_Shelf_Pigment_Taxo_Absorption_2019-2024.csv')
+# Convert Date column to pandas datetime format
+Insitu__data['SAMPLE_DATE'] = pd.to_datetime(
+    Insitu__data['Date'],
+    errors='coerce'
 )
-# FILTER DATA FOR DEPTH < 20 m
-df = df[
-    df["DEPTH"] < 20
+# Filter the data to a depth of less than 20 meters
+Filtered_data = Insitu__data[
+    Insitu__data['DEPTH'] < 20
 ].copy()
-# EXTRACT MONTH
-df["Month"] = df["SAMPLE_DATE"].dt.month
-# CALCULATE MONTHLY MEAN
-monthly_mean = (
-    df.groupby("Month")
+
+# Monthly mean absorption spectra
+HL_data_month = (
+    Filtered_data
+    .groupby(Filtered_data['SAMPLE_DATE'].dt.month)
     .mean(numeric_only=True)
 )
+HL_data_month1 = HL_data_month.rename_axis('MONTH')
 
-# ABSORPTION WAVELENGTHS: 400–700 nm
+# Select absorption wavelengths from 400 to 700 nm
+wavelengths = np.arange(400, 701)
 absorption_columns = [
-    f"wv{wavelength}nm"
-    for wavelength in range(400, 701)
+    f'wv{wavelength}nm' for wavelength in wavelengths
 ]
+Absorption1 = HL_data_month1[absorption_columns].copy()
 
-Abs_Col = df[
-    absorption_columns
-].copy()
+# Calculate monthly mean specific absorption
+Specific_AbCol1 = Absorption1.div(
+    HL_data_month1['HPLCHLA'],
+    axis=0
+)
+Specific_AbRow1 = Specific_AbCol1.transpose()
+Specific_AbRow1.index.name = 'Wavebands'
 
-# CALCULATE SPECIFIC ABSORPTION
-# Remove samples with zero or missing HPLCHLA
-valid_mask = (
-    df["HPLCHLA"] > 0
-) & (
-    df["HPLCHLA"].notna()
+# Use actual month labels to avoid mismatching data and months
+month_names = {
+    3: 'March',
+    4: 'April',
+    5: 'May',
+    6: 'June',
+    7: 'July',
+    8: 'August',
+    9: 'September',
+    10: 'October',
+    11: 'November'
+}
+Specific_AbRow1.columns = [
+    month_names.get(month, str(month))
+    for month in Specific_AbRow1.columns
+]
+Specific_AbRow2 = Specific_AbRow1.reset_index()
+monthly_columns = [
+    col for col in Specific_AbRow2.columns
+    if col != 'Wavebands'
+]
+Specific_AbRow2['Normal_Population'] = (
+    Specific_AbRow2[monthly_columns].mean(axis=1)
 )
 
-df_valid = df.loc[
-    valid_mask
-].copy()
+# Daily specific absorption spectra
+Absorption = Filtered_data[absorption_columns].copy()
 
-Abs_Col_valid = Abs_Col.loc[
-    valid_mask
-].copy()
+# Rename wv400nm to 400, wv401nm to 401, etc.
+column_mapping = {
+    col: col.replace('wv', '').replace('nm', '')
+    for col in Absorption.columns
+}
+Absorption = Absorption.rename(columns=column_mapping)
 
-Specific_Ab = Abs_Col_valid.div(
-    df_valid["HPLCHLA"],
+# Calculate specific absorption by dividing by HPLC chlorophyll-a
+Specific_AbCol = Absorption.div(
+    Filtered_data['HPLCHLA'],
     axis=0
 )
 
-# ADD TAXONOMIC DATA
-Specific_Ab["diatom"] = df_valid["diatom"]
-Specific_Ab["dino1"] = df_valid["dino1"]
-Specific_Ab["hapto6"] = df_valid["hapto6"]
-Specific_Ab["dictyo"] = df_valid["dictyo"]
-Specific_Ab["chloro"] = df_valid["chloro"]
-Specific_Ab["HPLCHLA"] = df_valid["HPLCHLA"]
+# Transpose columns to rows
+Specific_AbRow = Specific_AbCol.transpose()
 
-# CALCULATE TAXONOMIC CONTRIBUTION (%)
-Specific_Ab["diatom_percent"] = (
-    Specific_Ab["diatom"]
-    / Specific_Ab["HPLCHLA"]
-) * 100
-
-Specific_Ab["dino_percent"] = (
-    Specific_Ab["dino1"]
-    / Specific_Ab["HPLCHLA"]
-) * 100
-
-Specific_Ab["hapto_percent"] = (
-    Specific_Ab["hapto6"]
-    / Specific_Ab["HPLCHLA"]
-) * 100
-
-Specific_Ab["dictyo_percent"] = (
-    Specific_Ab["dictyo"]
-    / Specific_Ab["HPLCHLA"]
-) * 100
-
-Specific_Ab["chloro_percent"] = (
-    Specific_Ab["chloro"]
-    / Specific_Ab["HPLCHLA"]
-) * 100
-
-# DIATOM-DOMINANT SAMPLES (>80%)
-Specific_AbCol = Specific_Ab[
-    Specific_Ab["diatom_percent"] > 80
-].copy()
-
-Diatoms = (
-    Specific_AbCol[absorption_columns]
-    .mean()
-    .rename("Diatoms")
+# Algal taxa: percentage biomass
+taxa_biomass = Filtered_data[
+    ['diatom', 'dino1', 'hapto6', 'dictyo', 'chloro']
+].div(
+    Filtered_data['HPLCHLA'],
+    axis=0
 )
-# DINOPHYCEAE-DOMINANT SAMPLES (>80%)
-Specific_AbCol1 = Specific_Ab[
-    Specific_Ab["dino_percent"] > 80
-].copy()
-
-Dino = (
-    Specific_AbCol1[absorption_columns]
-    .mean()
-    .rename("Dinoflagellates")
+taxa_percent = taxa_biomass * 100
+taxa_percent = taxa_percent.rename(
+    columns={
+        'diatom': 'diatom_percent',
+        'dino1': 'dino_percent',
+        'hapto6': 'hapto_percent',
+        'dictyo': 'dictyo_percent',
+        'chloro': 'chloro_percent'
+    }
 )
-# HAPTOPHYTE-DOMINANT SAMPLES (>80%)
-Specific_AbCol2 = Specific_Ab[
-    Specific_Ab["hapto_percent"] > 80
-].copy()
 
-Hapto = (
-    Specific_AbCol2[absorption_columns]
-    .mean()
-    .rename("Haptophytes")
-)
-# DICTYOPHYTE-DOMINANT SAMPLES (>80%)
-Specific_AbCol3 = Specific_Ab[
-    Specific_Ab["dictyo_percent"] > 80
-].copy()
-
-Dictyo = (
-    Specific_AbCol3[absorption_columns]
-    .mean()
-    .rename("Dictyophytes")
-)
-# CHLOROPHYTE-DOMINANT SAMPLES (>80%)
-Specific_AbCol4 = Specific_Ab[
-    Specific_Ab["chloro_percent"] > 80
-].copy()
-
-Chloro = (
-    Specific_AbCol4[absorption_columns]
-    .mean()
-    .rename("Chlorophytes")
-)
-# COMBINE TAXON-SPECIFIC SPECTRA
-Spec_abs_5taxa = pd.concat(
+# Combine specific absorption and taxonomic percentages
+Specific_AbCol2 = pd.concat(
     [
-        Diatoms,
-        Dino,
-        Hapto,
-        Dictyo,
-        Chloro
-    ],
-    axis=1
-)
-# CONVERT WAVELENGTH INDEX TO NUMERIC VALUES
-wavelengths = np.arange(
-    400,
-    701
-)
-
-Spec_abs_5taxa.index = wavelengths
-Spec_abs_5taxa.index.name = (
-    "Wavelength (nm)"
-)
-
-# MONTHLY SPECIFIC ABSORPTION
-Specific_Ab_monthly = (
-    Specific_Ab[absorption_columns]
-    .copy()
-)
-
-Specific_Ab_monthly["Month"] = (
-    df_valid["Month"].values
-)
-
-# Calculate monthly mean specific absorption
-Specific_AbRow = (
-    Specific_Ab_monthly
-    .groupby("Month")
-    .mean()
-)
-# SELECT REQUIRED MONTHS
-selected_months = [
-    3, 4, 5, 6, 7, 9, 10
-]
-
-Specific_AbRow1 = (
-    Specific_AbRow
-    .loc[selected_months]
-    .T
-)
-
-Specific_AbRow1.columns = [
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "September",
-    "October"
-]
-
-Specific_AbRow1.index = wavelengths
-
-Specific_AbRow1.index.name = (
-    "Wavelength (nm)"
-)
-
-# NORMAL ALGAL POPULATION SPECTRUM
-Normal_Population = (
-    Specific_AbRow1
-    .mean(axis=1)
-    .rename("Normal_Population")
-)
-
-# COMBINE TAXA + NORMAL POPULATION
-Spec_abs_4taxa = pd.concat(
-    [
-        Diatoms,
-        Dino,
-        Hapto,
-        Chloro,
-        Normal_Population
+        Specific_AbCol.reset_index(drop=True),
+        taxa_percent.reset_index(drop=True)
     ],
     axis=1
 )
 
-Spec_abs_4taxa.index = wavelengths
-
-Spec_abs_4taxa.index.name = (
-    "Wavelength (nm)"
-)
-# NORMALIZE AT 440 nm
-# Select 440 nm explicitly
-Filter_440 = Spec_abs_4taxa.loc[
-    440
+# Diatoms: samples with percentage > 80
+Diatoms = Specific_AbCol2[
+    Specific_AbCol2['diatom_percent'] > 80
+].mean(numeric_only=True)
+Diatoms.index.name = 'Wavebands'
+Diatoms = Diatoms.rename('Diatoms')
+Diatoms1 = Diatoms.reset_index()
+Diatoms1 = Diatoms1[
+    ~Diatoms1['Wavebands'].isin(
+        [
+            'diatom_percent', 'dino_percent',
+            'hapto_percent', 'dictyo_percent',
+            'chloro_percent'
+        ]
+    )
 ]
 
-# NORMALIZE SPECIFIC ABSORPTION
-spectra_columns = [
-    "Diatoms",
-    "Dinoflagellates",
-    "Haptophytes",
-    "Chlorophytes",
-    "Normal_Population"
+# Dinoflagellates: samples with percentage > 80
+Dino = Specific_AbCol2[
+    Specific_AbCol2['dino_percent'] > 80
+].mean(numeric_only=True)
+Dino.index.name = 'Wavebands'
+Dino = Dino.rename('Dinoflagellates')
+Dino1 = Dino.reset_index()
+Dino1 = Dino1[
+    ~Dino1['Wavebands'].isin(
+        [
+            'diatom_percent', 'dino_percent',
+            'hapto_percent', 'dictyo_percent',
+            'chloro_percent'
+        ]
+    )
 ]
 
-y = Spec_abs_4taxa[
-    spectra_columns
-].divide(
-    Filter_440[spectra_columns],
-    axis=1
-)
+# Haptophytes: samples with percentage > 80
+Hapto = Specific_AbCol2[
+    Specific_AbCol2['hapto_percent'] > 80
+].mean(numeric_only=True)
+Hapto.index.name = 'Wavebands'
+Hapto = Hapto.rename('Haptophytes')
+Hapto1 = Hapto.reset_index()
+Hapto1 = Hapto1[
+    ~Hapto1['Wavebands'].isin(
+        [
+            'diatom_percent', 'dino_percent',
+            'hapto_percent', 'dictyo_percent',
+            'chloro_percent'
+        ]
+    )
+]
 
-y.index.name = (
-    "Wavelength (nm)"
-)
+# Dictyophytes: samples with percentage > 80
+Dictyo = Specific_AbCol2[
+    Specific_AbCol2['dictyo_percent'] > 80
+].mean(numeric_only=True)
+Dictyo.index.name = 'Wavebands'
+Dictyo = Dictyo.rename('Dictyophytes')
+Dictyo1 = Dictyo.reset_index()
+Dictyo1 = Dictyo1[
+    ~Dictyo1['Wavebands'].isin(
+        [
+            'diatom_percent', 'dino_percent',
+            'hapto_percent', 'dictyo_percent',
+            'chloro_percent'
+        ]
+    )
+]
 
-# PLOT NORMALIZED SPECIFIC ABSORPTION
-plt.figure(
-    figsize=(12, 7)
-)
-plt.plot(
-    y.index,
-    y["Diatoms"],
-    label="Diatoms",
-    linewidth=2
-)
-plt.plot(
-    y.index,
-    y["Dinoflagellates"],
-    label="Dinoflagellates",
-    linewidth=2
-)
-plt.plot(
-    y.index,
-    y["Haptophytes"],
-    label="Haptophytes",
-    linewidth=2
-)
-plt.plot(
-    y.index,
-    y["Chlorophytes"],
-    label="Chlorophytes",
-    linewidth=2
-)
-plt.plot(
-    y.index,
-    y["Normal_Population"],
-    label="Normal Population",
-    linewidth=3
-)
-plt.xlabel(
-    "Wavelength (nm)",
-    fontsize=12
-)
+# Chlorophytes: samples with percentage > 80
+Chloro = Specific_AbCol2[
+    Specific_AbCol2['chloro_percent'] > 80
+].mean(numeric_only=True)
+Chloro.index.name = 'Wavebands'
+Chloro = Chloro.rename('Chlorophytes')
+Chloro1 = Chloro.reset_index()
+Chloro1 = Chloro1[
+    ~Chloro1['Wavebands'].isin(
+        [
+            'diatom_percent', 'dino_percent',
+            'hapto_percent', 'dictyo_percent',
+            'chloro_percent'
+        ]
+    )
+]
 
-plt.ylabel(
-    "Normalized Specific Absorption",
-    fontsize=12
-)
+# Combine the four taxonomic groups and normal population
+# Extract the monthly normal-population spectrum
+Mixed_Spectra = Specific_AbRow2[
+    ['Wavebands', 'Normal_Population']
+].copy()
 
+# Merge individual taxonomic spectra by wavelength
+Spec_abs_4taxa = Diatoms1.merge(
+    Dino1, on='Wavebands', how='outer'
+)
+Spec_abs_4taxa = Spec_abs_4taxa.merge(
+    Hapto1, on='Wavebands', how='outer'
+)
+Spec_abs_4taxa = Spec_abs_4taxa.merge(
+    Chloro1, on='Wavebands', how='outer'
+)
+Spec_abs_4taxa = Spec_abs_4taxa.merge(
+    Mixed_Spectra, on='Wavebands', how='left'
+)
+Spec_abs_4taxa['Wavebands'] = pd.to_numeric(
+    Spec_abs_4taxa['Wavebands'],
+    errors='coerce'
+)
+Spec_abs_4taxa = Spec_abs_4taxa.sort_values(
+    'Wavebands'
+).reset_index(drop=True)
+print(Spec_abs_4taxa.head())
+
+# Plot specific absorption spectra of algal taxa
+x = Spec_abs_4taxa['Wavebands']
+taxa_columns = [
+    'Diatoms',
+    'Dinoflagellates',
+    'Haptophytes',
+    'Chlorophytes',
+    'Normal_Population'
+]
+y = Spec_abs_4taxa[taxa_columns]
+plt.rcParams["figure.figsize"] = (10, 5)
+plt.plot(
+    x,
+    y,
+    linestyle='solid',
+    label=[
+        'Diatoms',
+        'Dinoflagellates',
+        'Haptophytes',
+        'Chlorophytes',
+        'Normal Population'
+    ]
+)
+plt.xlabel('Wavelength (nm)')
+plt.ylabel('Specific absorption spectra of algal taxa')
 plt.xticks(
-    np.arange(400, 701, 20),
+    np.arange(400, 701, step=10),
     rotation=90
 )
-
+plt.rcParams['xtick.labelsize'] = 7
 plt.legend()
-plt.grid(
-    True,
-    alpha=0.3
+plt.tight_layout()
+plt.show()
+
+# Normalization with 440 nm absorption
+# Select the row corresponding to 440 nm
+Filter_440 = Spec_abs_4taxa.loc[
+    Spec_abs_4taxa['Wavebands'] == 440,
+    taxa_columns
+].iloc[0]
+print(Filter_440)
+
+# Normalize each spectrum by its 440 nm value
+x = Spec_abs_4taxa['Wavebands']
+y = Spec_abs_4taxa[taxa_columns].divide(
+    Filter_440.replace(0, np.nan),
+    axis=1
 )
+plt.rcParams["figure.figsize"] = (7, 4)
+plt.plot(
+    x,
+    y,
+    linestyle='solid',
+    label=[
+        'Diatoms',
+        'Dinoflagellates',
+        'Haptophytes',
+        'Chlorophytes',
+        'Mixed Population'
+    ]
+)
+plt.xlabel('Wavelength (nm)', fontsize=11)
+plt.ylabel(
+    'Specific absorption normalized to 440 nm',
+    fontsize=11
+)
+plt.xticks(
+    np.arange(400, 701, step=10),
+    rotation=90
+)
+plt.rcParams['xtick.labelsize'] = 10
+plt.legend()
 plt.tight_layout()
 plt.show()
